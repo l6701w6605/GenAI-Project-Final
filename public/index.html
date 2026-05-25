@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI 求职助手</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark">AI</span>
+          <div>
+            <strong>求职助手</strong>
+            <small>简历优化 · 岗位匹配</small>
+          </div>
+        </div>
+        <nav class="nav-tabs" aria-label="主导航">
+          <button class="active" data-view="dashboard">首页</button>
+          <button data-view="resumes">我的简历</button>
+          <button data-view="jobs">我的岗位</button>
+          <button data-view="applications">投递追踪</button>
+        </nav>
+        <div class="model-status" id="modelStatus">模型：检测中</div>
+      </aside>
+      <main id="appRoot"></main>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>
