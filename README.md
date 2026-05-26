@@ -12,7 +12,7 @@
 
 ## 界面截图
 
-<img width="2992" height="1456" alt="image" src="docs/images/1.png" />
+<img width="2992" height="1456" alt="image" src="./docs/images/1.png" />
 <img width="2992" height="1110" alt="image" src="https://github.com/user-attachments/assets/3c0165d2-6d33-442a-8c38-100f7c97ff83" />
 <img width="2994" height="1488" alt="image" src="https://github.com/user-attachments/assets/ba8c932c-8d31-4e86-b18f-8a679072d894" />
 
