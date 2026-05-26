@@ -39,7 +39,6 @@ AI 求职助手
 │   ├── JD 解析
 │   ├── 岗位画像
 │   ├── 匹配报告
-│   ├── Gap 分析
 │   └── 关联优化简历
 │
 ├── 投递追踪
@@ -145,11 +144,11 @@ git --version
 
 ## 安装项目
 
-克隆仓库：
+克隆仓库，并拉取主体文件同代码：
 
 ```bash
-git clone git@github.com:l6701w6605/GenAI-Project-Public.git
-cd GenAI-Project-Public
+git clone git@github.com:l6701w6605/GenAI-Project-Final.git
+cd GenAI-Project-Final
 ```
 
 安装依赖：
