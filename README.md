@@ -236,7 +236,7 @@ npm run dev
 
 ## 1. 首页
 
-<img width="2992" height="1456" alt="image" src="https://github.com/user-attachments/assets/67b105dc-da17-4582-a9e6-1b15aee1a0b7" />
+<img width="2992" height="1456" alt="image" src="./docs/images/4.png" />
 
 首页是求职决策工作台，展示：
 
@@ -250,12 +250,12 @@ npm run dev
 首页中的最近岗位支持点击进入岗位详情。
 
 ## 2. 我的简历
-<img width="1496" height="679" alt="Screenshot 2026-05-26 at 6 26 15 PM" src="https://github.com/user-attachments/assets/e77aa16b-5641-48be-86ca-15aa0208b2b6" />
+<img width="1496" height="679" alt="Screenshot 2026-05-26 at 6 26 15 PM" src="./docs/images/5.png" />
 我的简历模块负责简历上传、解析、诊断和优化。
 
 ### 支持上传格式
 
-<img width="1442" height="304" alt="image" src="https://github.com/user-attachments/assets/69d654a1-a3c4-4177-9399-8cc6e4cdd4bf" />
+<img width="1442" height="304" alt="image" src="./docs/images/6.png" />
 
 - PDF （大模型对pdf的解析方式和图片解析规则一致，如果选用pdf文档上传系统，需要运用兼容图片解析的大模型，否则会报错）
 - Word `.docx`
@@ -264,7 +264,7 @@ npm run dev
 - 直接粘贴文本
 
 ### 独立简历档案
-<img width="1172" height="1064" alt="image" src="https://github.com/user-attachments/assets/44e9430b-c7b6-42f4-953f-f12c47d63a6e" />
+<img width="1172" height="1064" alt="image" src="./docs/images/7.png" />
 
 每次上传简历都会形成独立档案，不会默认归为同一个人。
 
@@ -289,7 +289,7 @@ npm run dev
 - 简历摘要
 
 ### 简历诊断
-<img width="2978" height="1302" alt="image" src="https://github.com/user-attachments/assets/16c23782-32fe-421d-add7-ff0b7fc88ba0" />
+<img width="2978" height="1302" alt="image" src="./docs/images/8.png" />
 
 系统会生成：
 
@@ -299,7 +299,7 @@ npm run dev
 - 改进建议
 
 ### 定向优化
-<img width="2978" height="1456" alt="image" src="https://github.com/user-attachments/assets/162481c5-837e-4f47-994c-01eff869ec7a" />
+<img width="2978" height="1456" alt="image" src="./docs/images/9.png" />
 
 用户可以选择：
 
@@ -309,7 +309,7 @@ npm run dev
 系统会结合岗位 JD、匹配报告和 Gap 数据生成优化建议。
 
 ### 原版 / 优化版对照
-<img width="2994" height="1488" alt="image" src="https://github.com/user-attachments/assets/ba8c932c-8d31-4e86-b18f-8a679072d894" />
+<img width="2994" height="1488" alt="image" src="./docs/images/10.png" />
 
 优化完成后会展示结构化对照：
 
