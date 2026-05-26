@@ -22,6 +22,31 @@ let loadingStepTimer = null;
 const $ = selector => document.querySelector(selector);
 const root = () => $("#appRoot");
 
+function statusRank(status) {
+  return applicationStatuses.indexOf(status);
+}
+
+function hasReachedStatus(app, targetStatus) {
+  const targetRank = statusRank(targetStatus);
+  const currentRank = statusRank(app.current_status);
+  const historyRanks = (app.status_history || []).map(item => statusRank(item.status));
+  return [currentRank, ...historyRanks].some(rank => rank >= targetRank);
+}
+
+function rejectionStage(app) {
+  if (app.rejection_stage) return app.rejection_stage;
+  if (app.final_result !== "拒绝" && app.current_status !== "拒绝") return null;
+  const history = [...(app.status_history || [])].reverse();
+  const rejectedIndex = history.findIndex(item => item.status === "拒绝");
+  if (rejectedIndex > 0) return history[rejectedIndex - 1].status;
+  return app.current_status === "拒绝" ? "未记录阶段" : app.current_status;
+}
+
+function rate(numerator, denominator) {
+  if (!denominator) return 0;
+  return Math.round((numerator / denominator) * 100);
+}
+
 function toast(message) {
   const node = $("#toast");
   node.textContent = message;
@@ -238,6 +263,7 @@ function setView(nextView, options = {}) {
   if (options.resumeId !== undefined) selectedResumeId = options.resumeId;
   if (options.jobId !== undefined) selectedJobId = options.jobId;
   if (options.optimizedResumeId !== undefined) selectedOptimizedResumeId = options.optimizedResumeId;
+  if (options.applicationId !== undefined) selectedApplicationId = options.applicationId;
   document.querySelectorAll(".nav-tabs button").forEach(button => {
     button.classList.toggle("active", button.dataset.view === topLevelView(nextView));
   });
@@ -247,6 +273,8 @@ function setView(nextView, options = {}) {
 function topLevelView(current) {
   if (current.startsWith("resume")) return "resumes";
   if (current.startsWith("job") || current.startsWith("match")) return "jobs";
+  if (current.startsWith("application")) return "applications";
+  if (current.startsWith("growth")) return "applications";
   return current;
 }
 
@@ -288,6 +316,7 @@ function renderDashboard() {
   `;
   $("#newResume").addEventListener("click", () => setView("resumeUpload"));
   $("#newJob").addEventListener("click", () => setView("jobInput"));
+  bindJobCardActions();
 }
 
 function renderUserProfile() {
@@ -681,6 +710,10 @@ function renderJobs() {
   `;
   $("#newJobButton").addEventListener("click", () => setView("jobInput"));
   $("#emptyNewJob")?.addEventListener("click", () => setView("jobInput"));
+  bindJobCardActions();
+}
+
+function bindJobCardActions() {
   document.querySelectorAll("[data-open-job]").forEach(button => {
     button.addEventListener("click", () => setView("jobDetail", { jobId: button.dataset.openJob }));
   });
@@ -903,25 +936,650 @@ function renderJobDetail() {
 }
 
 function renderApplications() {
+  const unlocked = state.applications.length >= 3;
   root().innerHTML = `
-    ${renderShell("投递追踪", "投递模块保留为结果层：绑定 Job Card，记录进展并为复盘提供信号。", `<button id="createApplication">创建投递</button>`)}
+    ${renderShell("投递追踪", "投递状态由「我的岗位」中的求职决策同步生成。", `<button id="openGrowthInsights" ${unlocked ? "" : "disabled"}>成长分析</button>`)}
     <section class="panel">
-      <div class="form-inline">
-        <select id="applicationJobSelect">${state.jobCards.map(job => `<option value="${job.job_card_id}">${escapeHtml(jobTitle(job))}｜${escapeHtml(company(job))}</option>`).join("")}</select>
-        <select id="applicationChannel"><option>官网</option><option>Boss直聘</option><option>拉勾</option><option>猎聘</option><option>内推</option><option>其他</option></select>
-      </div>
+      ${unlocked
+        ? `<div class="notice">已积累 ${state.applications.length} 条投递记录，可以查看跨投递成长分析。</div>`
+        : `<div class="empty-state">还差 ${3 - state.applications.length} 条投递记录解锁成长分析。先从「我的岗位」标记投递或放弃来积累数据。</div>`}
     </section>
     <div class="kanban">${applicationStatuses.map(status => {
       const apps = state.applications.filter(app => app.current_status === status);
       return `<section class="kanban-column"><h3>${status}<span>${apps.length}</span></h3>${apps.map(renderApplicationCard).join("") || `<p class="meta">暂无记录</p>`}</section>`;
     }).join("")}</div>
   `;
-  $("#createApplication").addEventListener("click", createApplication);
+  $("#openGrowthInsights").addEventListener("click", () => {
+    if (!unlocked) return toast("至少需要 3 条投递记录才能查看成长分析");
+    setView("growthInsights");
+  });
+  document.querySelectorAll("[data-open-application]").forEach(card => {
+    card.addEventListener("click", () => setView("applicationDetail", { applicationId: card.dataset.openApplication }));
+  });
 }
 
 function renderApplicationCard(app) {
   const job = state.jobCards.find(item => item.job_card_id === app.job_card_id);
-  return `<article class="application-card"><strong>${escapeHtml(jobTitle(job))}</strong><p class="meta">${escapeHtml(app.apply_channel)} · ${escapeHtml(app.apply_date)} · ${escapeHtml(app.match_score_at_apply || "-")}分</p></article>`;
+  return `<article class="application-card" data-open-application="${app.application_id}" tabindex="0"><strong>${escapeHtml(jobTitle(job))}</strong><p class="meta">${escapeHtml(company(job))} · ${escapeHtml(app.apply_channel)} · ${escapeHtml(app.apply_date)} · ${escapeHtml(app.match_score_at_apply || "-")}分</p></article>`;
+}
+
+function computeGrowthStats() {
+  const apps = state.applications || [];
+  const scored = apps.filter(app => Number.isFinite(Number(app.match_score_at_apply)));
+  const total = apps.length;
+  const hrPassed = apps.filter(app => hasReachedStatus(app, "HR筛选通过")).length;
+  const interviewReached = apps.filter(app => hasReachedStatus(app, "一面")).length;
+  const interviewPassed = apps.filter(app => hasReachedStatus(app, "二面") || app.current_status === "已发Offer" || app.final_result === "Offer").length;
+  const offers = apps.filter(app => app.current_status === "已发Offer" || app.final_result === "Offer").length;
+  const averageMatch = scored.length
+    ? Math.round(scored.reduce((sum, app) => sum + Number(app.match_score_at_apply), 0) / scored.length)
+    : "-";
+  const rejectedStages = apps.map(rejectionStage).filter(Boolean);
+  const stageCounts = rejectedStages.reduce((acc, stage) => {
+    acc[stage] = (acc[stage] || 0) + 1;
+    return acc;
+  }, {});
+  const mostRejectedStage = Object.entries(stageCounts).sort((a, b) => b[1] - a[1])[0] || null;
+  const gapCounts = {};
+  apps.forEach(app => {
+    (app.gap_data_at_apply?.priority_gaps || []).forEach(gap => {
+      const key = gap.item || "未命名 Gap";
+      gapCounts[key] = gapCounts[key] || { item: key, count: 0, high: 0, failed: 0 };
+      gapCounts[key].count += 1;
+      if (gap.severity === "high") gapCounts[key].high += 1;
+      if (["拒绝", "放弃"].includes(app.final_result) || ["拒绝", "放弃"].includes(app.current_status)) gapCounts[key].failed += 1;
+    });
+  });
+  const recurringGaps = Object.values(gapCounts)
+    .filter(item => item.count >= 2)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+  const growthHighMatchThreshold = 50;
+  const matchBuckets = [
+    { label: "高匹配 50+", apps: apps.filter(app => Number(app.match_score_at_apply || 0) >= growthHighMatchThreshold) },
+    { label: "低匹配 <50", apps: apps.filter(app => Number(app.match_score_at_apply || 0) < growthHighMatchThreshold) }
+  ].map(bucket => ({
+    ...bucket,
+    hrRate: rate(bucket.apps.filter(app => hasReachedStatus(app, "HR筛选通过")).length, bucket.apps.length),
+    interviewRate: rate(bucket.apps.filter(app => hasReachedStatus(app, "一面")).length, bucket.apps.length),
+    offerRate: rate(bucket.apps.filter(app => app.current_status === "已发Offer" || app.final_result === "Offer").length, bucket.apps.length)
+  }));
+  return {
+    total,
+    hrRate: rate(hrPassed, total),
+    interviewRate: rate(interviewPassed, interviewReached),
+    interviewReached,
+    offers,
+    averageMatch,
+    mostRejectedStage,
+    stageCounts,
+    recurringGaps,
+    matchBuckets
+  };
+}
+
+function renderGrowthInsights() {
+  if (state.applications.length < 3) return setView("applications");
+  const stats = computeGrowthStats();
+  const aiInsight = state.growthInsights?.[0];
+  root().innerHTML = `
+    ${renderShell("成长分析", "基于投递记录识别求职漏斗、匹配分表现和反复出现的 Gap。", `<button class="ghost-button" id="backApplicationsFromGrowth">投递追踪</button>`)}
+    <div class="metric-grid">
+      <article class="metric"><span>总投递数</span><strong>${escapeHtml(stats.total)}</strong></article>
+      <article class="metric"><span>HR 通过率</span><strong>${escapeHtml(stats.hrRate)}%</strong></article>
+      <article class="metric"><span>面试通过率</span><strong>${escapeHtml(stats.interviewRate)}%</strong></article>
+      <article class="metric"><span>Offer 数</span><strong>${escapeHtml(stats.offers)}</strong></article>
+    </div>
+    <div class="two-column">
+      <section class="panel">
+        <div class="panel-heading"><h2>漏斗概览</h2></div>
+        ${renderFunnelRow("HR 通过率", stats.hrRate, `${stats.hrRate}%`, "blue")}
+        ${renderFunnelRow("面试通过率", stats.interviewRate, `${stats.interviewRate}%`, "blue")}
+        ${renderFunnelRow("平均匹配分", Number(stats.averageMatch) || 0, `${stats.averageMatch}分`, "blue")}
+        <div class="notice">最常被拒阶段：${escapeHtml(stats.mostRejectedStage ? `${stats.mostRejectedStage[0]}（${stats.mostRejectedStage[1]}次）` : "暂无拒绝记录")}</div>
+      </section>
+      <section class="panel">
+        <div class="panel-heading"><h2>匹配分表现对比</h2></div>
+        ${stats.matchBuckets.map(bucket => {
+          const bucketColor = bucket.label.includes("高匹配") ? "green" : "amber";
+          return `
+          <div class="bucket-card ${bucketColor}">
+            <strong>${escapeHtml(bucket.label)}</strong>
+            <p class="meta">${escapeHtml(bucket.apps.length)} 条记录</p>
+            ${bucket.apps.length ? `
+              ${renderFunnelRow("HR 通过", bucket.hrRate, `${bucket.hrRate}%`, bucketColor)}
+              ${renderFunnelRow("进入面试", bucket.interviewRate, `${bucket.interviewRate}%`, bucketColor)}
+              ${renderFunnelRow("Offer", bucket.offerRate, `${bucket.offerRate}%`, bucketColor)}
+            ` : `<div class="empty-state">暂无该匹配分区间的投递样本。</div>`}
+          </div>
+        `;
+        }).join("")}
+      </section>
+    </div>
+    <div class="two-column">
+      <section class="panel">
+        <div class="panel-heading"><h2>被拒阶段分布</h2></div>
+        ${Object.keys(stats.stageCounts).length ? Object.entries(stats.stageCounts).map(([stage, count]) => `
+          <div class="stage-row"><span>${escapeHtml(stage)}</span><strong>${escapeHtml(count)} 次</strong></div>
+        `).join("") : `<p class="meta">暂无拒绝阶段数据。</p>`}
+      </section>
+      <section class="panel">
+        <div class="panel-heading"><h2>反复出现的 Gap</h2></div>
+        ${stats.recurringGaps.length ? stats.recurringGaps.map(gap => `
+          <div class="gap-item">
+            <strong>${escapeHtml(gap.item)}</strong>
+            <p class="meta">出现 ${escapeHtml(gap.count)} 次 · 高优先级 ${escapeHtml(gap.high)} 次 · 失败/放弃关联 ${escapeHtml(gap.failed)} 次</p>
+          </div>
+        `).join("") : `<p class="meta">暂无反复出现的 Gap。积累更多匹配报告后会更准确。</p>`}
+      </section>
+    </div>
+    <section class="panel">
+      <div class="panel-heading">
+        <h2>AI 成长解读</h2>
+        <button id="generateGrowthInsight" type="button">${aiInsight ? "刷新 AI 解读" : "生成 AI 解读"}</button>
+      </div>
+      ${aiInsight ? renderGrowthInsightBlock(aiInsight) : `<div class="empty-state">点击生成后，AI 会结合投递状态、匹配分、Gap 和复盘记录，给出阶段性成长解读。此操作会调用一次大模型。</div>`}
+    </section>
+  `;
+  $("#backApplicationsFromGrowth").addEventListener("click", () => setView("applications"));
+  $("#generateGrowthInsight").addEventListener("click", event => generateGrowthInsight(event.currentTarget));
+}
+
+function renderGrowthInsightBlock(insight) {
+  const strategy = readableGrowthStrategy(insight.recommended_strategy);
+  const actions = normalizeGrowthActions(insight.next_actions);
+  const patterns = normalizeGrowthPatterns(insight.patterns);
+  const bottlenecks = normalizeGrowthBottlenecks(insight.bottlenecks);
+  return `
+    <div class="growth-ai-grid">
+      <div class="notice">${escapeHtml(readableText(insight.overview) || "已生成成长洞察。")}</div>
+      <div class="report-block"><h3>正向规律</h3>${renderGrowthPatternsTable(patterns)}</div>
+      <div class="report-block"><h3>主要瓶颈</h3>${renderGrowthBottlenecksTable(bottlenecks)}</div>
+      ${strategy ? `<div class="report-block"><h3>推荐策略</h3>${renderStrategyTable(strategy)}</div>` : ""}
+      <div class="report-block"><h3>下一步行动</h3>${renderGrowthActionsTable(actions)}</div>
+      <p class="meta">生成时间：${escapeHtml(formatDate(insight.generated_at))}</p>
+    </div>
+  `;
+}
+
+function readableText(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    const text = String(value).trim();
+    return text === "[object Object]" || text === "{}" ? "" : text;
+  }
+  if (Array.isArray(value)) return value.map(readableText).filter(Boolean).join("；");
+  if (typeof value === "object") {
+    const preferred = ["summary", "insight", "description", "recommendation", "strategy", "action", "impact", "evidence", "text"];
+    const picked = preferred.map(key => readableText(value[key])).filter(Boolean);
+    if (picked.length) return picked.join("；");
+    return Object.entries(value)
+      .filter(([, item]) => item !== null && item !== undefined && typeof item !== "object")
+      .map(([key, item]) => `${key}: ${readableText(item)}`)
+      .filter(Boolean)
+      .join("；");
+  }
+  return "";
+}
+
+function readableGrowthStrategy(value) {
+  if (!value) return "";
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed && trimmed !== "[object Object]" && trimmed !== "{}" ? trimmed : "";
+  }
+  if (typeof value === "object") {
+    const candidates = [
+      value.summary,
+      value.recommendation,
+      value.strategy,
+      value.advice,
+      value.text,
+      value.description
+    ].filter(item => typeof item === "string" && item.trim());
+    if (candidates.length) return candidates.join(" ");
+  }
+  return "";
+}
+
+function normalizeGrowthPatterns(items) {
+  if (!Array.isArray(items)) return [];
+  return items.map((item, index) => {
+    if (typeof item === "string") {
+      return { topic: `规律 ${index + 1}`, insight: item, evidence: "-", suggestion: "-" };
+    }
+    return {
+      topic: readableText(item.topic || item.category || item.pattern || item.name) || `规律 ${index + 1}`,
+      insight: readableText(item.insight || item.description || item.summary || item.pattern) || "-",
+      evidence: readableText(item.evidence || item.reason || item.data || item.metrics) || "-",
+      suggestion: readableText(item.recommendation || item.action || item.next_step || item.suggestion) || "-"
+    };
+  });
+}
+
+function normalizeGrowthBottlenecks(items) {
+  if (!Array.isArray(items)) return [];
+  return items.map((item, index) => {
+    if (typeof item === "string") {
+      return { item: item, severity: "-", impact: "-", evidence: "-" };
+    }
+    return {
+      item: readableText(item.item || item.bottleneck || item.category || item.name) || `瓶颈 ${index + 1}`,
+      severity: readableText(item.severity || item.priority || item.level) || "-",
+      impact: readableText(item.impact || item.description || item.insight || item.reason) || "-",
+      evidence: readableText(item.evidence || item.evidence_source || item.metrics || item.data) || "-"
+    };
+  });
+}
+
+function normalizeGrowthActions(actions) {
+  if (!Array.isArray(actions)) return [];
+  return actions.map(item => {
+    if (typeof item === "string") {
+      return { category: "行动", action: item, priority: "-", dueDate: "-", metric: "-" };
+    }
+    return {
+      category: readableText(item.category || item.type) || "行动",
+      action: readableText(item.action || item.title || item.task || item.description) || "未命名行动",
+      priority: readableText(item.priority) || "-",
+      dueDate: readableText(item.due_date || item.dueDate || item.deadline) || "-",
+      metric: readableText(item.metrics || item.metric || item.success_metric) || "-"
+    };
+  });
+}
+
+function hasTableValue(value) {
+  const text = readableText(value);
+  return Boolean(text && text !== "-");
+}
+
+function renderDynamicTable(items, columns, emptyText) {
+  if (!items.length) return `<p class="meta">${escapeHtml(emptyText)}</p>`;
+  const visibleColumns = columns.filter(column => items.some(item => hasTableValue(item[column.key])));
+  if (!visibleColumns.length) return `<p class="meta">${escapeHtml(emptyText)}</p>`;
+  return `
+    <div class="table-wrap">
+      <table class="action-table">
+        <thead>
+          <tr>${visibleColumns.map(column => `<th>${escapeHtml(column.label)}</th>`).join("")}</tr>
+        </thead>
+        <tbody>
+          ${items.map(item => `
+            <tr>
+              ${visibleColumns.map(column => `<td>${escapeHtml(readableText(item[column.key]) || "-")}</td>`).join("")}
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderStrategyTable(strategy) {
+  return `
+    <div class="table-wrap">
+      <table class="action-table">
+        <thead><tr><th>策略</th></tr></thead>
+        <tbody><tr><td>${escapeHtml(strategy)}</td></tr></tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderGrowthPatternsTable(patterns) {
+  return renderDynamicTable(patterns, [
+    { key: "topic", label: "维度" },
+    { key: "insight", label: "洞察" },
+    { key: "evidence", label: "依据" },
+    { key: "suggestion", label: "建议" }
+  ], "暂无正向规律。");
+}
+
+function renderGrowthBottlenecksTable(bottlenecks) {
+  return renderDynamicTable(bottlenecks, [
+    { key: "item", label: "瓶颈" },
+    { key: "severity", label: "严重度" },
+    { key: "impact", label: "影响" },
+    { key: "evidence", label: "依据" }
+  ], "暂无主要瓶颈。");
+}
+
+function renderGrowthActionsTable(actions) {
+  if (!actions.length) return `<p class="meta">暂无下一步行动。</p>`;
+  return `
+    <div class="table-wrap">
+      <table class="action-table">
+        <thead>
+          <tr>
+            <th>类别</th>
+            <th>行动</th>
+            <th>优先级</th>
+            <th>截止时间</th>
+            <th>衡量指标</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${actions.map(item => `
+            <tr>
+              <td>${escapeHtml(item.category)}</td>
+              <td>${escapeHtml(item.action)}</td>
+              <td>${escapeHtml(item.priority)}</td>
+              <td>${escapeHtml(item.dueDate)}</td>
+              <td>${escapeHtml(item.metric)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderFunnelRow(label, value, displayValue, colorClass = "blue") {
+  const safe = Math.max(0, Math.min(100, Number(value || 0)));
+  return `
+    <div class="funnel-row ${colorClass}">
+      <div><strong>${escapeHtml(label)}</strong><span>${escapeHtml(displayValue)}</span></div>
+      <div class="progress"><span style="width:${safe}%"></span></div>
+    </div>
+  `;
+}
+
+function renderApplicationDetail() {
+  const app = state.applications.find(item => item.application_id === selectedApplicationId) || state.applications[0];
+  if (!app) return setView("applications");
+  const job = state.jobCards.find(item => item.job_card_id === app.job_card_id);
+  const resume = state.resumeVersions.find(item => item.resume_version_id === app.resume_version_id);
+  const statusHistory = app.status_history?.length
+    ? [...app.status_history].reverse()
+    : [{ status: app.current_status, date: app.apply_date, note: "当前状态" }];
+  const gaps = app.gap_data_at_apply?.priority_gaps || job?.gap_data?.priority_gaps || [];
+  const retrospective = app.retrospective;
+  root().innerHTML = `
+    ${renderShell(`${jobTitle(job)} · ${company(job)}`, "投递详情聚合投递状态、使用简历、匹配报告、Gap 数据和面试记录。", `<button class="ghost-button" id="backApplications">投递追踪</button>`)}
+    <section class="panel">
+      <div class="status-strip"><span>${escapeHtml(app.current_status)}</span><strong>${escapeHtml(app.final_result || "进行中")}</strong></div>
+    </section>
+    <div class="two-column wide-left">
+      <section class="panel">
+        <div class="report-block">
+          <h3>投递基本信息</h3>
+          <div class="field-list">
+            <div class="field-row"><span>岗位名称</span><strong>${escapeHtml(jobTitle(job))}</strong></div>
+            <div class="field-row"><span>公司</span><strong>${escapeHtml(company(job))}</strong></div>
+            <div class="field-row"><span>匹配分</span><strong>${escapeHtml(app.match_score_at_apply || job?.match_report?.total_score || "-")}分</strong></div>
+            <div class="field-row"><span>投递日期</span><strong>${escapeHtml(app.apply_date || "-")}</strong></div>
+            <div class="field-row"><span>当前状态</span><strong>${escapeHtml(app.current_status || "-")}</strong></div>
+            <div class="field-row"><span>使用简历</span><strong>${escapeHtml(resumeTitle(resume))}</strong></div>
+            <div class="field-row"><span>投递渠道</span><strong>${escapeHtml(app.apply_channel || "-")}</strong></div>
+          </div>
+          <div class="button-row">
+            <button id="openStatusDrawer" type="button">更新进度</button>
+          </div>
+        </div>
+        <div class="report-block">
+          <h3>状态历史时间线</h3>
+          <div class="timeline">${statusHistory.map(item => `
+            <div class="timeline-item">
+              <span>${escapeHtml(item.date || formatDate(item.created_at) || "-")}</span>
+              <strong>${escapeHtml(item.status)}</strong>
+              ${item.note ? `<p>${escapeHtml(item.note)}</p>` : ""}
+            </div>
+          `).join("")}</div>
+        </div>
+        <div class="report-block">
+          <h3>面试记录</h3>
+          ${(app.interview_rounds || []).map(round => `
+            <div class="gap-item">
+              <strong>${escapeHtml(round.round_type)} · ${escapeHtml(round.outcome || "待结果")}</strong>
+              <p class="meta">自评 ${escapeHtml(round.performance_rating || "-")}/5 · ${escapeHtml(formatDate(round.completed_at))}</p>
+              ${round.stuck_on ? `<p>${escapeHtml(round.stuck_on)}</p>` : ""}
+              ${pills(round.question_types || [])}
+            </div>
+          `).join("") || `<p class="meta">暂无面试记录。只有你主动记录后，这里才会出现一面、二面等信息。</p>`}
+          <button id="recordInterview" type="button">记录面试</button>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="report-block">
+          <h3>关联 Job Card</h3>
+          <p>${escapeHtml(job?.jd_profile?.job_summary || job?.raw_jd_text || "暂无岗位摘要。")}</p>
+          <div class="button-row">
+            <button id="openApplicationJob" type="button">查看岗位详情</button>
+            ${job?.match_report ? `<button class="ghost-button" id="openApplicationReport" type="button">查看匹配报告</button>` : ""}
+          </div>
+        </div>
+        <div class="report-block">
+          <h3>关联 Gap 数据</h3>
+          ${gaps.map(gap => `
+            <div class="gap-item">
+              <strong>${escapeHtml(gap.item)} · ${escapeHtml(gap.severity)}</strong>
+              <p>${escapeHtml(gap.description)}</p>
+              <p class="meta">${escapeHtml(gap.resume_fix)}</p>
+            </div>
+          `).join("") || `<p class="meta">暂无 Gap 数据。完成岗位匹配后会自动关联。</p>`}
+        </div>
+        <div class="report-block">
+          <h3>复盘报告</h3>
+          ${retrospective ? renderRetrospectiveBlock(retrospective) : `<p class="meta">尚未生成复盘。数据不足时也可以生成基础复盘，系统会明确标注推断范围。</p>`}
+          <button id="generateRetrospective" type="button">生成复盘</button>
+        </div>
+      </section>
+    </div>
+  `;
+  $("#backApplications").addEventListener("click", () => setView("applications"));
+  $("#openStatusDrawer").addEventListener("click", () => showStatusDrawer(app));
+  $("#openApplicationJob").addEventListener("click", () => setView("jobDetail", { jobId: job?.job_card_id }));
+  $("#openApplicationReport")?.addEventListener("click", () => setView("jobReport", { jobId: job?.job_card_id }));
+  $("#recordInterview").addEventListener("click", () => showInterviewDrawer(app));
+  $("#generateRetrospective").addEventListener("click", event => generateRetrospective(app.application_id, event.currentTarget));
+}
+
+function renderRetrospectiveBlock(retrospective) {
+  const result = typeof retrospective.result_interpretation === "object"
+    ? retrospective.result_interpretation
+    : {
+        summary: retrospective.result_interpretation,
+        prediction_accuracy: retrospective.prediction_accuracy,
+        accuracy_explanation: retrospective.process_analysis,
+        likely_bottleneck: "数据不足"
+      };
+  const performance = retrospective.performance_analysis || {
+    available: Boolean(retrospective.process_analysis),
+    trend: "暂无记录",
+    key_insight: retrospective.process_analysis || "基于推断，仅供参考：暂无面试记录。",
+    stuck_point: null
+  };
+  const gaps = retrospective.gap_validation || [];
+  const actions = retrospective.action_items || [];
+  const learnings = retrospective.key_learnings || [];
+  return `
+    <div class="retrospective-stack">
+      <section class="retrospective-section">
+        <h4>1. 结果解读</h4>
+        <div class="notice">${escapeHtml(result.summary || retrospective.summary_for_notification || "已生成复盘报告。")}</div>
+        <div class="field-list compact">
+          <div class="field-row"><span>匹配预测</span><strong>${escapeHtml(result.prediction_accuracy || retrospective.prediction_accuracy || "-")}</strong></div>
+          <div class="field-row"><span>主要瓶颈</span><strong>${escapeHtml(result.likely_bottleneck || "-")}</strong></div>
+        </div>
+        <p class="meta">${escapeHtml(result.accuracy_explanation || "")}</p>
+      </section>
+      <section class="retrospective-section">
+        <h4>2. 面试表现分析</h4>
+        <p>${escapeHtml(performance.key_insight || "暂无面试表现记录。")}</p>
+        <p class="meta">趋势：${escapeHtml(performance.trend || "-")}</p>
+        ${performance.stuck_point ? `<p class="meta">卡点：${escapeHtml(performance.stuck_point)}</p>` : ""}
+      </section>
+      <section class="retrospective-section">
+        <h4>3. Gap 验证</h4>
+        ${gaps.length ? gaps.map(gap => `
+          <div class="gap-item">
+            <strong>${escapeHtml(gap.gap_item || gap.item || "Gap 项")} · ${escapeHtml(gap.validation_result || "未验证")}</strong>
+            <p>${escapeHtml(gap.insight || gap.note || "暂无验证说明。")}</p>
+            <p class="meta">优先级：${escapeHtml(gap.original_severity || "-")} · 实际考察：${escapeHtml(gap.actually_tested === true ? "是" : gap.actually_tested === false ? "否" : "不确定")} · 表现：${escapeHtml(gap.user_performance || gap.performance || "待验证")}</p>
+          </div>
+        `).join("") : `<p class="meta">暂无可验证 Gap。完成岗位匹配或补充面试记录后会更准确。</p>`}
+      </section>
+      <section class="retrospective-section">
+        <h4>4. 行动清单</h4>
+        ${actions.length ? actions.map(item => `
+          <div class="action-item">
+            <span class="pill ${item.priority === "high" ? "amber" : ""}">${escapeHtml(item.category || item.type || "行动项")}</span>
+            <strong>${escapeHtml(item.action || item.title || item)}</strong>
+            <p class="meta">${escapeHtml(item.estimated_effort || "")}${item.target_module ? ` · ${escapeHtml(item.target_module)}` : ""}</p>
+          </div>
+        `).join("") : list(learnings)}
+      </section>
+      ${retrospective.data_improvement_tip ? `<p class="meta">下次建议补充：${escapeHtml(retrospective.data_improvement_tip)}</p>` : ""}
+    </div>
+  `;
+}
+
+function showStatusDrawer(app) {
+  $("#statusDrawer")?.remove();
+  document.body.insertAdjacentHTML("beforeend", `
+    <div class="drawer-backdrop" id="statusDrawer" role="dialog" aria-modal="true" aria-labelledby="statusDrawerTitle">
+      <section class="bottom-drawer">
+        <div class="drawer-handle" aria-hidden="true"></div>
+        <div class="panel-heading">
+          <div>
+            <h2 id="statusDrawerTitle">更新投递进度</h2>
+            <p>当前状态：${escapeHtml(app.current_status || "投递中")}</p>
+          </div>
+          <button class="ghost-button" id="closeStatusDrawer" type="button">关闭</button>
+        </div>
+        <div class="status-option-grid">
+          ${applicationStatuses.map(status => `
+            <label class="status-option ${status === app.current_status ? "active" : ""}">
+              <input type="radio" name="nextStatus" value="${escapeHtml(status)}" ${status === app.current_status ? "checked" : ""} />
+              <span>${escapeHtml(status)}</span>
+            </label>
+          `).join("")}
+        </div>
+        <p class="meta">如果选择更早的状态，系统会把后续误选的状态记录清除，只保留回退后的正确时间线。</p>
+        <label class="drawer-field">
+          <span>备注（可选）</span>
+          <textarea id="statusNote" rows="3" placeholder="例如：HR 已约面，时间待确认；或邮件通知未通过。"></textarea>
+        </label>
+        <div class="button-row drawer-actions">
+          <button id="submitStatusUpdate" type="button">确认更新</button>
+          <button class="ghost-button" id="cancelStatusUpdate" type="button">取消</button>
+        </div>
+      </section>
+    </div>
+  `);
+  document.querySelectorAll("#statusDrawer .status-option input").forEach(input => {
+    input.addEventListener("change", () => {
+      document.querySelectorAll("#statusDrawer .status-option").forEach(label => label.classList.remove("active"));
+      input.closest(".status-option")?.classList.add("active");
+    });
+  });
+  $("#closeStatusDrawer").addEventListener("click", hideStatusDrawer);
+  $("#cancelStatusUpdate").addEventListener("click", hideStatusDrawer);
+  $("#statusDrawer").addEventListener("click", event => {
+    if (event.target.id === "statusDrawer") hideStatusDrawer();
+  });
+  $("#submitStatusUpdate").addEventListener("click", event => updateApplicationStatus(app.application_id, event.currentTarget));
+}
+
+function hideStatusDrawer() {
+  $("#statusDrawer")?.remove();
+}
+
+function showInterviewDrawer(app) {
+  $("#interviewDrawer")?.remove();
+  const defaultRound = ["HR筛选通过", "一面", "二面", "终面"].includes(app.current_status)
+    ? app.current_status.replace("HR筛选通过", "HR面")
+    : "一面";
+  const roundOptions = ["HR面", "一面", "二面", "终面", "其他"];
+  const outcomeOptions = ["通过", "未通过", "待结果"];
+  const questionOptions = ["技术题", "行为题", "案例分析", "产品设计", "背景了解"];
+  document.body.insertAdjacentHTML("beforeend", `
+    <div class="drawer-backdrop" id="interviewDrawer" role="dialog" aria-modal="true" aria-labelledby="interviewDrawerTitle">
+      <section class="bottom-drawer">
+        <div class="drawer-handle" aria-hidden="true"></div>
+        <div class="panel-heading">
+          <div>
+            <h2 id="interviewDrawerTitle">记录面试</h2>
+            <p>用 30 秒补充关键感受，后续复盘会更准确。</p>
+          </div>
+          <button class="ghost-button" id="closeInterviewDrawer" type="button">关闭</button>
+        </div>
+        <label class="drawer-field">
+          <span>面试轮次</span>
+          <select id="interviewRoundType">
+            ${roundOptions.map(option => `<option value="${escapeHtml(option)}" ${option === defaultRound ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}
+          </select>
+        </label>
+        <div class="drawer-section">
+          <h3>这轮结果如何？</h3>
+          <div class="choice-grid three">
+            ${outcomeOptions.map(option => `
+              <label class="choice-card ${option === "待结果" ? "active" : ""}">
+                <input type="radio" name="interviewOutcome" value="${escapeHtml(option)}" ${option === "待结果" ? "checked" : ""} />
+                <span>${escapeHtml(option)}</span>
+              </label>
+            `).join("")}
+          </div>
+        </div>
+        <div class="drawer-section">
+          <h3>考察了哪些问题？</h3>
+          <div class="choice-grid">
+            ${questionOptions.map(option => `
+              <label class="choice-card">
+                <input type="checkbox" name="questionTypes" value="${escapeHtml(option)}" />
+                <span>${escapeHtml(option)}</span>
+              </label>
+            `).join("")}
+          </div>
+        </div>
+        <label class="drawer-field">
+          <span>哪里卡住了？（可跳过）</span>
+          <textarea id="interviewStuckOn" rows="3" placeholder="比如：案例分析思路不够清晰，或者 SQL 题没有写完整。"></textarea>
+        </label>
+        <div class="drawer-section">
+          <h3>整体感觉怎么样？</h3>
+          <div class="rating-row" id="interviewRating">
+            ${[1, 2, 3, 4, 5].map(value => `<button class="${value === 3 ? "active" : ""}" data-rating="${value}" type="button">${value}</button>`).join("")}
+          </div>
+        </div>
+        <div class="button-row drawer-actions">
+          <button id="saveInterviewRecord" type="button">保存记录</button>
+          <button class="ghost-button" id="cancelInterviewRecord" type="button">取消</button>
+        </div>
+      </section>
+    </div>
+  `);
+  bindChoiceCards("#interviewDrawer");
+  $("#interviewRating").addEventListener("click", event => {
+    const button = event.target.closest("[data-rating]");
+    if (!button) return;
+    document.querySelectorAll("#interviewRating button").forEach(item => item.classList.remove("active"));
+    button.classList.add("active");
+  });
+  $("#closeInterviewDrawer").addEventListener("click", hideInterviewDrawer);
+  $("#cancelInterviewRecord").addEventListener("click", hideInterviewDrawer);
+  $("#interviewDrawer").addEventListener("click", event => {
+    if (event.target.id === "interviewDrawer") hideInterviewDrawer();
+  });
+  $("#saveInterviewRecord").addEventListener("click", event => saveInterviewRecord(app.application_id, event.currentTarget));
+}
+
+function bindChoiceCards(scopeSelector) {
+  document.querySelectorAll(`${scopeSelector} .choice-card input`).forEach(input => {
+    input.addEventListener("change", () => {
+      if (input.type === "radio") {
+        document.querySelectorAll(`${scopeSelector} input[name='${input.name}']`).forEach(item => {
+          item.closest(".choice-card")?.classList.toggle("active", item.checked);
+        });
+      } else {
+        input.closest(".choice-card")?.classList.toggle("active", input.checked);
+      }
+    });
+  });
+}
+
+function hideInterviewDrawer() {
+  $("#interviewDrawer")?.remove();
 }
 
 function render() {
@@ -941,6 +1599,8 @@ function render() {
   if (view === "jobReport") return renderJobReport();
   if (view === "jobDetail") return renderJobDetail();
   if (view === "applications") return renderApplications();
+  if (view === "applicationDetail") return renderApplicationDetail();
+  if (view === "growthInsights") return renderGrowthInsights();
 }
 
 async function refresh() {
@@ -1108,16 +1768,74 @@ async function updateJobDecision(jobId, decision) {
   toast(decision === "applied" ? "已同步到投递追踪：投递中" : "已同步到投递追踪：放弃");
 }
 
-async function createApplication() {
-  const jobCardId = $("#applicationJobSelect").value;
-  if (!jobCardId) return toast("请先创建岗位卡片");
-  await api("/api/applications", {
-    method: "POST",
-    body: JSON.stringify({ jobCardId, applyChannel: $("#applicationChannel").value })
+async function updateApplicationStatus(applicationId, button) {
+  const selected = document.querySelector("#statusDrawer input[name='nextStatus']:checked")?.value;
+  if (!selected) return toast("请选择新的投递状态");
+  const note = $("#statusNote")?.value || "";
+  await withBusy(button, "更新中", async () => {
+    await api(`/api/applications/${applicationId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ currentStatus: selected, note })
+    });
+    hideStatusDrawer();
+    await refresh();
+    setView("applicationDetail", { applicationId });
+    toast("投递进度已更新");
   });
-  await refresh();
-  setView("applications");
-  toast("投递记录已创建");
+}
+
+async function saveInterviewRecord(applicationId, button) {
+  const roundType = $("#interviewRoundType")?.value || "一面";
+  const outcome = document.querySelector("#interviewDrawer input[name='interviewOutcome']:checked")?.value || "待结果";
+  const questionTypes = Array.from(document.querySelectorAll("#interviewDrawer input[name='questionTypes']:checked")).map(input => input.value);
+  const performanceRating = Number(document.querySelector("#interviewRating button.active")?.dataset.rating || 3);
+  const stuckOn = $("#interviewStuckOn")?.value || "";
+  await withBusy(button, "保存中", async () => {
+    await api(`/api/applications/${applicationId}/interviews`, {
+      method: "POST",
+      body: JSON.stringify({
+        roundType,
+        outcome,
+        questionTypes,
+        stuckOn,
+        performanceRating
+      })
+    });
+    hideInterviewDrawer();
+    await refresh();
+    setView("applicationDetail", { applicationId });
+    toast("面试记录已保存");
+  });
+}
+
+async function generateRetrospective(applicationId, button) {
+  await withBusy(button, "生成中", async () => {
+    await withLoadingOverlay({
+      title: "正在生成复盘报告",
+      subtitle: "AI 正在结合投递记录、匹配分、Gap 数据和面试记录进行分析。",
+      steps: ["解读投递结果", "分析面试表现", "验证预测 Gap", "生成行动清单"]
+    }, async () => {
+      await api(`/api/applications/${applicationId}/retrospective`, { method: "POST" });
+      await refresh();
+      setView("applicationDetail", { applicationId });
+      toast("复盘报告已生成");
+    });
+  });
+}
+
+async function generateGrowthInsight(button) {
+  await withBusy(button, "生成中", async () => {
+    await withLoadingOverlay({
+      title: "正在生成成长解读",
+      subtitle: "AI 正在汇总多次投递记录，识别共性问题和下一步策略。",
+      steps: ["计算投递漏斗", "对比匹配分表现", "识别反复 Gap", "整理下一步行动"]
+    }, async () => {
+      await api("/api/growth-insights", { method: "POST" });
+      await refresh();
+      setView("growthInsights");
+      toast("AI 成长解读已生成");
+    });
+  });
 }
 
 document.querySelectorAll(".nav-tabs button").forEach(button => {

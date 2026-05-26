@@ -30,6 +30,51 @@ const APPLICATION_STATUSES = [
   "放弃"
 ];
 
+function applicationStatusRank(status) {
+  return APPLICATION_STATUSES.indexOf(status);
+}
+
+function updateApplicationProgress(application, nextStatus, note) {
+  const currentRank = applicationStatusRank(application.current_status);
+  const nextRank = applicationStatusRank(nextStatus);
+  const history = Array.isArray(application.status_history) ? application.status_history : [];
+  let chronological = history.length
+    ? [...history].reverse()
+    : [{
+        status: application.current_status || "投递中",
+        date: application.apply_date || today(),
+        note: "初始状态"
+      }];
+
+  if (nextRank <= currentRank && currentRank !== -1) {
+    const existingIndex = chronological.map(item => item.status).lastIndexOf(nextStatus);
+    if (existingIndex >= 0) {
+      chronological = chronological.slice(0, existingIndex + 1);
+      if (note) chronological[chronological.length - 1].note = note;
+    } else {
+      chronological = chronological.filter(item => {
+        const itemRank = applicationStatusRank(item.status);
+        return itemRank === -1 || itemRank < nextRank;
+      });
+      chronological.push({ status: nextStatus, date: today(), note: note || "修正投递状态" });
+    }
+  } else {
+    const latest = chronological[chronological.length - 1];
+    if (latest?.status === nextStatus) {
+      if (note) latest.note = note;
+    } else {
+      chronological.push({ status: nextStatus, date: today(), note: note || null });
+    }
+  }
+
+  application.current_status = nextStatus;
+  application.status_history = chronological.reverse();
+  if (nextStatus === "拒绝") application.final_result = "拒绝";
+  else if (nextStatus === "已发Offer") application.final_result = "Offer";
+  else if (nextStatus === "放弃") application.final_result = "放弃";
+  else application.final_result = "进行中";
+}
+
 function loadEnvFile() {
   if (!fs.existsSync(ENV_FILE)) return;
   const lines = fs.readFileSync(ENV_FILE, "utf8").split(/\r?\n/);
@@ -731,28 +776,57 @@ function normalizeOptimizationResult(optimized, resumeText, jobCard) {
   return result;
 }
 
-function fallbackRetrospective(application) {
+function fallbackRetrospective(application, jobCard = null, userProfile = null) {
   const score = application.match_score_at_apply || 0;
   const finalResult = application.final_result || application.current_status;
   const interviewCount = application.interview_rounds?.length || 0;
+  const rejectedEarly = finalResult === "拒绝" && ["投递中", "HR筛选通过", "一面"].includes(application.current_status);
+  const interpretationSummary = score >= 70 && rejectedEarly
+    ? `匹配分 ${score}，但在${application.current_status}阶段受阻，需重点复盘表达与关键 Gap。`
+    : score >= 70
+      ? `匹配基础较好，复盘重点应放在面试表现和岗位关键能力验证。`
+      : `匹配分偏低，选岗匹配度和简历针对性都需要一起复盘。`;
+  const gapSource = application.gap_data_at_apply?.priority_gaps || jobCard?.gap_data?.priority_gaps || [];
+  const interviewText = (application.interview_rounds || [])
+    .flatMap(round => [round.stuck_on, ...(round.question_types || [])])
+    .filter(Boolean)
+    .join(" ");
   return {
-    result_interpretation: score >= 75 && finalResult === "拒绝"
-      ? "匹配分较高但未成功，问题更可能出现在面试表达、竞争强度或招聘侧变化。"
-      : "需要结合匹配差距和投递阶段判断主要瓶颈。",
-    prediction_accuracy: finalResult === "Offer" ? "准确" : score >= 80 ? "偏高" : "准确",
-    gap_validation: (application.gap_data_at_apply?.priority_gaps || []).map(gap => ({
+    result_interpretation: {
+      summary: interpretationSummary,
+      prediction_accuracy: finalResult === "Offer" ? "准确" : score >= 70 && rejectedEarly ? "偏高" : "准确",
+      accuracy_explanation: interviewCount
+        ? "已有面试记录，可结合实际卡点验证匹配预测。"
+        : "缺少面试记录，当前复盘主要基于投递阶段和匹配数据推断。",
+      likely_bottleneck: score < 60 ? "匹配度问题" : interviewCount ? "面试表现问题" : "待补充面试记录"
+    },
+    performance_analysis: {
+      available: interviewCount > 0,
+      trend: interviewCount > 1 ? "需结合多轮结果判断" : interviewCount === 1 ? "单轮记录" : "暂无记录",
+      key_insight: interviewCount
+        ? `已记录 ${interviewCount} 轮面试，建议重点复盘卡住的问题和题型。`
+        : "基于推断，仅供参考：暂无面试记录，无法确认实际考察点。",
+      stuck_point: (application.interview_rounds || []).map(round => round.stuck_on).filter(Boolean).join("；") || null
+    },
+    gap_validation: gapSource.map(gap => {
+      const tested = interviewText ? interviewText.toLowerCase().includes(String(gap.item || "").toLowerCase()) : null;
+      return {
       gap_item: gap.item,
+      original_severity: gap.severity || "medium",
       actually_tested: interviewCount > 0,
-      performance: "待验证",
-      note: "可在面试记录中补充是否被问到该点。"
-    })),
-    process_analysis: interviewCount ? `已记录 ${interviewCount} 轮面试，可继续补充卡住的问题。` : "缺少面试记录，本次只能做基础复盘。",
+      user_performance: tested ? "可能卡顿" : "待验证",
+      validation_result: interviewCount > 0 ? (tested ? "准确" : "未验证") : "未验证",
+      insight: tested ? "该 Gap 可能在面试中暴露，建议优先处理。" : "当前记录不足，暂不能确认是否被考察。"
+    };
+    }),
     key_learnings: ["投递时保留匹配分快照，后续可验证选岗判断", "每轮面试后记录卡点会显著提升复盘质量"],
     action_items: [
-      { title: "补充面试卡点", type: "记录完善", priority: "high", done: false },
-      { title: "按高优先级 Gap 更新简历", type: "简历优化", priority: "high", done: false },
-      { title: "准备 2 个岗位关键词相关案例", type: "面试准备", priority: "medium", done: false }
+      { category: "更新简历", priority: "high", action: "按高优先级 Gap 更新简历中的项目或经历表达", target_module: "resume_f3", estimated_effort: "30分钟" },
+      { category: "练习题型", priority: "high", action: "围绕面试卡点准备 2 个 STAR 或案例回答", target_module: "外部", estimated_effort: "1天" },
+      { category: "调整选岗", priority: "medium", action: "优先投递匹配分 70 分以上且 Gap 更少的岗位", target_module: "match", estimated_effort: "30分钟" }
     ],
+    process_analysis: interviewCount ? `已记录 ${interviewCount} 轮面试，可继续补充卡住的问题。` : "缺少面试记录，本次只能做基础复盘。",
+    summary_for_notification: interpretationSummary.slice(0, 30),
     data_improvement_tip: interviewCount ? null : "补充一轮面试记录"
   };
 }
@@ -791,12 +865,26 @@ const prompts = {
     user: ({ resumeText, jobCard }) => `原简历：\n${resumeText}\n\n岗位卡片：\n${JSON.stringify(jobCard, null, 2)}\n\n请严格按以下 JSON 结构输出：\n{\n  \"optimized_resume\": \"string 或结构化对象\",\n  \"positioning_summary\": \"string\",\n  \"optimization_score\": 0,\n  \"score_breakdown\": {\"jd_alignment\": 0, \"keyword_coverage\": 0, \"evidence_quality\": 0, \"authenticity_risk\": 0},\n  \"rewrite_suggestions\": [\n    {\"section\": \"经历/项目/技能等区块\", \"before\": \"原简历中需要修改的具体内容\", \"after\": \"新版简历建议表达\", \"reason\": \"为什么这样改\", \"keywords_inserted\": [\"关键词\"], \"gap_driven\": true}\n  ],\n  \"keywords_added\": [\"string\"],\n  \"risk_notes\": [\"string\"]\n}`
   },
   retrospective: {
-    system: `你是资深求职教练，擅长结合投递、匹配和面试记录做复盘。输出严格 JSON，不要输出 Markdown。必须包含 result_interpretation、prediction_accuracy、gap_validation、process_analysis、key_learnings、action_items、data_improvement_tip。行动项要具体可执行。`,
-    user: application => `请基于以下投递记录生成复盘报告：\n${JSON.stringify(application, null, 2)}`
+    system: `你是资深求职教练，擅长结合投递记录、岗位匹配报告、Gap 数据和面试微录入做单次投递复盘。输出严格 JSON，不要输出 Markdown。
+规则：
+1. 报告必须包含四块：结果解读、面试表现分析、Gap 验证、行动清单。
+2. prediction_accuracy 判断匹配分预测是否准确：高分但早期失败为偏高；低分但进入后期或拿 Offer 为偏低；结果与匹配分基本吻合为准确；缺少数据为无法判断。
+3. Gap 验证只能基于用户面试记录、卡点文本和题型推断，不要编造实际面试题。无法确认时标记为未验证。
+4. 需要判断主要瓶颈更像是：简历问题、匹配度问题、面试表现问题、招聘侧/竞争因素、数据不足。
+5. 行动项必须具体可执行，分类只能是：更新简历、练习题型、调整选岗、其他；每条给出 priority、action、target_module、estimated_effort。
+6. 如果没有面试记录，仍可生成基础复盘，但 performance_analysis.key_insight 必须以“基于推断，仅供参考”开头。
+7. 输出严格符合用户给定 JSON 结构。`,
+    user: ({ application, jobCard, userProfile }) => `请基于以下数据生成单次投递复盘报告：\n\n<application_record>\n${JSON.stringify(application, null, 2)}\n</application_record>\n\n<job_card>\n${JSON.stringify(jobCard, null, 2)}\n</job_card>\n\n<user_profile>\n${JSON.stringify(userProfile, null, 2)}\n</user_profile>\n\n输出格式：\n{\n  \"result_interpretation\": {\n    \"summary\": \"一句话解读结果\",\n    \"prediction_accuracy\": \"准确|偏高|偏低|无法判断\",\n    \"accuracy_explanation\": \"为什么这样判断\",\n    \"likely_bottleneck\": \"简历问题|匹配度问题|面试表现问题|招聘侧/竞争因素|数据不足\"\n  },\n  \"performance_analysis\": {\n    \"available\": true,\n    \"trend\": \"稳定|前好后差|前差后好|单轮记录|暂无记录\",\n    \"key_insight\": \"面试表现关键发现\",\n    \"stuck_point\": \"用户记录的卡点或 null\"\n  },\n  \"gap_validation\": [\n    {\n      \"gap_item\": \"Gap 名称\",\n      \"original_severity\": \"high|medium|low\",\n      \"actually_tested\": true,\n      \"user_performance\": \"顺畅|一般|卡顿|待验证|null\",\n      \"validation_result\": \"准确|未验证|新发现\",\n      \"insight\": \"验证洞察\"\n    }\n  ],\n  \"key_learnings\": [\"关键学习点\"],\n  \"action_items\": [\n    {\n      \"category\": \"更新简历|练习题型|调整选岗|其他\",\n      \"priority\": \"high|medium|low\",\n      \"action\": \"具体行动描述\",\n      \"target_module\": \"resume_f3|match|外部|null\",\n      \"estimated_effort\": \"30分钟|1天|1周|null\",\n      \"carry_data\": {}\n    }\n  ],\n  \"summary_for_notification\": \"一句话摘要\",\n  \"data_improvement_tip\": \"下次补充什么数据会更准确或 null\"\n}`
   },
   growth: {
-    system: `你是职业发展分析师。请基于多条投递记录识别跨投递模式，输出严格 JSON，不要输出 Markdown。必须包含 generated_at、overview、patterns、bottlenecks、recommended_strategy、next_actions。`,
-    user: applications => `请分析这些投递记录：\n${JSON.stringify(applications, null, 2)}`
+    system: `你是职业发展分析师。请基于多条投递记录识别跨投递模式，输出严格 JSON，不要输出 Markdown。必须包含 generated_at、overview、patterns、bottlenecks、recommended_strategy、next_actions。
+规则：
+1. 如果数据里仍有进行中的投递，需要明确说明结论是阶段性洞察。
+2. patterns 输出用户目前表现出的正向规律。
+3. bottlenecks 输出最可能卡住用户的瓶颈。
+4. recommended_strategy 必须结合匹配分、状态流转、Gap 和 Offer/拒绝结果。
+5. next_actions 必须是可执行动作，不要输出泛泛建议。`,
+    user: applications => `请分析这些投递记录并生成成长洞察：\n${JSON.stringify(applications, null, 2)}`
   }
 };
 
@@ -1047,11 +1135,12 @@ async function handleApi(req, res, url) {
 
       if (req.method === "PATCH" && !action) {
         if (body.currentStatus && APPLICATION_STATUSES.includes(body.currentStatus)) {
-          application.current_status = body.currentStatus;
-          application.status_history.unshift({ status: body.currentStatus, date: today(), note: body.note || null });
-          if (body.currentStatus === "拒绝") application.final_result = "拒绝";
-          if (body.currentStatus === "已发Offer") application.final_result = "Offer";
-          if (body.currentStatus === "放弃") application.final_result = "放弃";
+          updateApplicationProgress(application, body.currentStatus, body.note || null);
+          const linkedJobCard = db.jobCards.find(item => item.job_card_id === application.job_card_id);
+          if (linkedJobCard) {
+            linkedJobCard.user_decision = body.currentStatus === "放弃" ? "archived" : "applied";
+            linkedJobCard.updated_at = now();
+          }
         }
         if (body.finalResult) application.final_result = body.finalResult;
         if (body.rejectionStage !== undefined) application.rejection_stage = body.rejectionStage || null;
@@ -1080,10 +1169,13 @@ async function handleApi(req, res, url) {
       }
 
       if (req.method === "POST" && action === "retrospective") {
+        const jobCard = db.jobCards.find(item => item.job_card_id === application.job_card_id) || null;
+        const resume = findResumeVersion(db, application.resume_version_id);
+        const userProfile = profileForResume(resume) || db.userProfile || null;
         const report = await callLlm(
           prompts.retrospective.system,
-          prompts.retrospective.user(application),
-          () => fallbackRetrospective(application)
+          prompts.retrospective.user({ application, jobCard, userProfile }),
+          () => fallbackRetrospective(application, jobCard, userProfile)
         );
         application.retrospective = {
           ...report,
@@ -1097,14 +1189,14 @@ async function handleApi(req, res, url) {
     }
 
     if (req.method === "POST" && url.pathname === "/api/growth-insights") {
-      const completed = db.applications.filter(item => item.final_result && item.final_result !== "进行中");
-      if (completed.length < 3) {
-        return sendJson(res, 409, { error: "至少需要 3 条有结果的投递记录才能生成成长洞察。" });
+      const records = db.applications || [];
+      if (records.length < 3) {
+        return sendJson(res, 409, { error: "至少需要 3 条投递记录才能生成成长洞察。" });
       }
       const insight = await callLlm(
         prompts.growth.system,
-        prompts.growth.user(completed),
-        () => fallbackGrowthInsights(completed)
+        prompts.growth.user(records),
+        () => fallbackGrowthInsights(records)
       );
       db.growthInsights.unshift({ ...insight, generated_at: insight.generated_at || now() });
       db.growthInsights = db.growthInsights.slice(0, 3);
