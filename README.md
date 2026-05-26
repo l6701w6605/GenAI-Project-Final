@@ -324,7 +324,7 @@ npm run dev
 我的岗位模块以 Job Card 为核心。
 
 ### 岗位添加
-<img width="2978" height="818" alt="image" src="https://github.com/user-attachments/assets/2d814c15-b907-4d0e-839d-fe5cafe52bfd" />
+<img width="2978" height="818" alt="image" src="./docs/images/11.png" />
 
 支持：
 
@@ -348,7 +348,7 @@ npm run dev
 - 核心考察点
 
 ### 匹配分析
-<img width="2470" height="1446" alt="image" src="https://github.com/user-attachments/assets/404d60cb-5750-4976-a674-c2bf688ef847" />
+<img width="2470" height="1446" alt="image" src="./docs/images/12.png" />
 
 系统会结合用户画像和岗位画像生成匹配报告：
 
@@ -363,7 +363,7 @@ npm run dev
 - 待补强项
 
 ### 求职决策
-<img width="1168" height="598" alt="image" src="https://github.com/user-attachments/assets/4cafe05c-6122-4530-b12b-f1a0ffd799ed" />
+<img width="1168" height="598" alt="image" src="./docs/images/13.png" />
 
 岗位详情页支持：
 
@@ -377,7 +377,7 @@ npm run dev
 ## 4. 投递追踪
 
 投递追踪模块用于管理求职进度。
-<img width="3018" height="1244" alt="image" src="https://github.com/user-attachments/assets/abab98d3-8a65-4393-84ab-8a15dc5d7699" />
+<img width="3018" height="1244" alt="image" src="./docs/images/14.png" />
 
 投递记录不从投递追踪页手动创建，而是从我的岗位中发起：
 
@@ -402,7 +402,7 @@ npm run dev
 ### 投递详情页
 
 投递详情页展示：
-<img width="2390" height="1448" alt="image" src="https://github.com/user-attachments/assets/b1f6ce91-175d-4ff7-a56a-f35af38f53cd" />
+<img width="2390" height="1448" alt="image" src="./docs/images/15.png" />
 
 - 岗位名称
 - 公司
@@ -412,8 +412,8 @@ npm run dev
 - 使用简历版本
 - 投递渠道
 
-<img width="1430" height="1298" alt="image" src="https://github.com/user-attachments/assets/8df14ba6-cd58-471a-a66f-201271ca9d06" />
-<img width="930" height="1010" alt="image" src="https://github.com/user-attachments/assets/9eccb5ce-3fbe-46ec-9eea-2fa4d87c817d" />
+<img width="1430" height="1298" alt="image" src="./docs/images/16.png" />
+<img width="930" height="1010" alt="image" src="./docs/images/17.png" />
 
 - 状态历史时间线
 - 关联 Job Card
@@ -423,7 +423,7 @@ npm run dev
 - AI 复盘报告
 
 ### 状态更新抽屉
-<img width="1608" height="1100" alt="image" src="https://github.com/user-attachments/assets/a56d4ce9-590d-4a9c-8797-674cea6c13d6" />
+<img width="1608" height="1100" alt="image" src="./docs/images/18.png" />
 
 点击「更新进度」可以选择新状态：
 
@@ -445,7 +445,7 @@ status_history
 如果误选状态，可以回退。系统会清除错误状态之后的时间线。
 
 ### 面试微录入
-<img width="1622" height="1374" alt="image" src="https://github.com/user-attachments/assets/8888b110-5a8a-408a-9b8a-1dac953c9267" />
+<img width="1622" height="1374" alt="image" src="./docs/images/19.png" />
 
 面试记录表单包含：
 
@@ -472,7 +472,7 @@ interview_rounds
 这些数据会用于 AI 复盘。
 
 ### AI 单次复盘报告
-<img width="2054" height="1316" alt="image" src="https://github.com/user-attachments/assets/e0540cdd-e0ae-44e4-8990-717685539150" />
+<img width="2054" height="1316" alt="image" src="./docs/images/20.png" />
 
 点击「生成复盘」后，系统会分析：
 
@@ -495,7 +495,7 @@ interview_rounds
 ## 5. 成长分析
 
 当投递记录达到 3 条以上，会解锁成长分析。
-<img width="2990" height="1222" alt="image" src="https://github.com/user-attachments/assets/efcc147e-69c9-401b-b39e-29f914cdf92d" />
+<img width="2990" height="1222" alt="image" src="./docs/images/21.png" />
 
 成长分析包含：
 
@@ -516,7 +516,7 @@ interview_rounds
 ```
 
 ### AI 成长解读
-<img width="2990" height="1480" alt="image" src="https://github.com/user-attachments/assets/06c1b154-389f-40aa-8c55-13908138ade3" />
+<img width="2990" height="1480" alt="image" src="./docs/images/22.png" />
 
 成长分析页支持生成 AI 解读。
 
