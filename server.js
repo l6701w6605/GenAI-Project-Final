@@ -344,6 +344,79 @@ function extractJson(text) {
   return JSON.parse(raw.slice(first, last + 1));
 }
 
+function decodeHtmlEntities(text) {
+  const named = {
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    quot: "\"",
+    apos: "'",
+    nbsp: " "
+  };
+  return String(text || "")
+    .replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (_, entity) => {
+      const lower = entity.toLowerCase();
+      if (lower.startsWith("#x")) return String.fromCodePoint(parseInt(lower.slice(2), 16));
+      if (lower.startsWith("#")) return String.fromCodePoint(parseInt(lower.slice(1), 10));
+      return named[lower] || " ";
+    });
+}
+
+function htmlToPlainText(html) {
+  const body = String(html || "").match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] || String(html || "");
+  return decodeHtmlEntities(
+    body
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+      .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
+      .replace(/<!--[\s\S]*?-->/g, " ")
+      .replace(/<(br|p|div|section|article|li|tr|h[1-6])\b[^>]*>/gi, "\n")
+      .replace(/<[^>]+>/g, " ")
+  )
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+async function fetchTextFromUrl(sourceUrl) {
+  let parsed;
+  try {
+    parsed = new URL(sourceUrl);
+  } catch {
+    throw new Error("Invalid URL.");
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("Only http and https URLs are supported.");
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(parsed.href, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; AIJobAssistant/1.0)",
+        Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8"
+      }
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch URL: ${response.status}`);
+    }
+    const contentType = response.headers.get("content-type") || "";
+    const raw = await response.text();
+    const text = contentType.includes("html") || raw.includes("<html")
+      ? htmlToPlainText(raw)
+      : raw;
+    return {
+      url: response.url || parsed.href,
+      text: compactText(text, 20000)
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function callLlm(systemPrompt, userPrompt, fallback) {
   const apiKey = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY;
   const baseUrl = (process.env.LLM_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
@@ -925,6 +998,28 @@ async function handleApi(req, res, url) {
         text,
         characters: text.length
       });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/extract-jd-url") {
+      const sourceUrl = String(body.url || "").trim();
+      if (!sourceUrl) return sendJson(res, 400, { error: "url is required" });
+      try {
+        const extracted = await fetchTextFromUrl(sourceUrl);
+        if (extracted.text.length < 100) {
+          return sendJson(res, 422, {
+            error: "提取到的文本过短，可能遇到登录、反爬或动态渲染页面。请复制 JD 文本后改用粘贴输入。"
+          });
+        }
+        return sendJson(res, 200, {
+          url: extracted.url,
+          text: extracted.text,
+          characters: extracted.text.length
+        });
+      } catch (error) {
+        return sendJson(res, 502, {
+          error: `岗位链接提取失败：${error.message} 请改用文本粘贴。`
+        });
+      }
     }
 
     if (req.method === "POST" && url.pathname === "/api/analyze-resume") {

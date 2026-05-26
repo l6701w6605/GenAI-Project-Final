@@ -1,40 +1,21 @@
-# AI 求职助手
+# AI  简历优化+岗位匹配 求职助手💼💻🤖
 
-AI 求职助手是一个面向求职流程的本地 Web 应用，覆盖从简历上传、简历解析、岗位匹配、定向优化，到投递追踪、面试记录、AI 复盘和成长分析的完整闭环。
+这是一个 AI 辅助求职网站，支持简历解析、简历诊断、岗位 JD 解析、岗位匹配度评估、定向简历优化、投递追踪面试记录、AI 复盘和成长分析的完整闭环。
+前后端自集成一体化操作，需通过命令行指令激活后端，一个指令实现前后端联动，无需分别启动端口操作
 
 项目采用轻量化实现：
 
 - 前端：HTML / CSS / 原生 JavaScript 单页应用
 - 后端：Node.js 原生 HTTP Server
 - 数据存储：本地 JSON 文件
-- 大模型：兼容 OpenAI Chat Completions API 的模型服务
+- 大模型：兼容 OpenAI Chat API /OpenRouter等中转站自选版本的模型服务
 
 ## 界面截图
 
-建议在项目中创建截图目录：
+<img width="2992" height="1456" alt="image" src="https://github.com/user-attachments/assets/7fcfeca8-cea6-4564-b1b9-f4451aa32090" />
+<img width="2992" height="1110" alt="image" src="https://github.com/user-attachments/assets/3c0165d2-6d33-442a-8c38-100f7c97ff83" />
+<img width="2994" height="1488" alt="image" src="https://github.com/user-attachments/assets/ba8c932c-8d31-4e86-b18f-8a679072d894" />
 
-```text
-docs/images/
-```
-
-可以放入以下截图：
-
-```text
-docs/images/dashboard.png
-docs/images/resumes.png
-docs/images/jobs.png
-docs/images/match-report.png
-docs/images/applications.png
-docs/images/growth-insights.png
-```
-
-在 README 中可以这样引用：
-
-```md
-![首页](docs/images/dashboard.png)
-```
-
-GitHub 会自动渲染这些图片。
 
 ## 功能总览
 
@@ -145,6 +126,7 @@ data/store.json
 | `data/store.json` | 本地业务数据 |
 | `.env` | 本地环境变量配置 |
 
+
 ## 环境要求
 
 请先安装：
@@ -166,8 +148,8 @@ git --version
 克隆仓库：
 
 ```bash
-git clone git@github.com:l6701w6605/GenAI-Project-Private.git
-cd GenAI-Project-Private
+git clone git@github.com:l6701w6605/GenAI-Project-Public.git
+cd GenAI-Project-Public
 ```
 
 安装依赖：
@@ -181,31 +163,14 @@ npm install
 在项目根目录创建 `.env` 文件：
 
 ```env
-LLM_API_KEY=your_api_key_here
-LLM_BASE_URL=https://wolfai.top/v1
-LLM_MODEL=gpt-4.1-mini
+LLM_API_KEY=自己的_API_Key
+LLM_BASE_URL=官方模型接口，中转站原生模型接口均可,接口版本号一定要写准确，详情参见模型技术文档
+LLM_MODEL=自选模型，模型版本号一定要准确（例如gpt-4.1-nano）
 PORT=3000
 HOST=127.0.0.1
-```
+默认保存为.env文件
+模型接入成功后，屏幕选项栏底部将自动解析模型版本号
 
-字段说明：
-
-| 字段 | 说明 |
-| --- | --- |
-| `LLM_API_KEY` | 大模型平台 API Key |
-| `LLM_BASE_URL` | OpenAI-compatible API 基础地址 |
-| `LLM_MODEL` | 使用的模型名称 |
-| `PORT` | 本地服务端口 |
-| `HOST` | 本地监听地址 |
-
-### WolfAI 配置示例
-
-```env
-LLM_API_KEY=你的 WolfAI API Key
-LLM_BASE_URL=https://wolfai.top/v1
-LLM_MODEL=gpt-4.1-mini
-PORT=3000
-HOST=127.0.0.1
 ```
 
 ### OpenRouter 配置示例
@@ -215,31 +180,8 @@ LLM_API_KEY=你的 OpenRouter API Key
 LLM_BASE_URL=https://openrouter.ai/api/v1
 LLM_MODEL=openai/gpt-4o-mini
 PORT=3000
-HOST=127.0.0.1
-```
-
-### OpenAI 官方 API 配置示例
-
-```env
-LLM_API_KEY=你的 OpenAI API Key
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_MODEL=gpt-4.1-mini
-PORT=3000
-HOST=127.0.0.1
-```
-
-注意：`LLM_BASE_URL` 只需要写到 `/v1`，不要写 `/chat/completions`。后端会自动拼接 `/chat/completions`。
-
-正确：
-
-```env
-LLM_BASE_URL=https://wolfai.top/v1
-```
-
-错误：
-
-```env
-LLM_BASE_URL=https://wolfai.top/v1/chat/completions
+HOST=127.0.0.1 http://127.0.0.1:3000
+模型默认网关为3000，如与你本地程序冲突，请自行修改网关
 ```
 
 ## 启动项目
@@ -295,6 +237,8 @@ npm run dev
 
 ## 1. 首页
 
+<img width="2992" height="1456" alt="image" src="https://github.com/user-attachments/assets/67b105dc-da17-4582-a9e6-1b15aee1a0b7" />
+
 首页是求职决策工作台，展示：
 
 - 简历档案数量
@@ -307,18 +251,21 @@ npm run dev
 首页中的最近岗位支持点击进入岗位详情。
 
 ## 2. 我的简历
-
+<img width="1496" height="679" alt="Screenshot 2026-05-26 at 6 26 15 PM" src="https://github.com/user-attachments/assets/e77aa16b-5641-48be-86ca-15aa0208b2b6" />
 我的简历模块负责简历上传、解析、诊断和优化。
 
 ### 支持上传格式
 
-- PDF
+<img width="1442" height="304" alt="image" src="https://github.com/user-attachments/assets/69d654a1-a3c4-4177-9399-8cc6e4cdd4bf" />
+
+- PDF （大模型对pdf的解析方式和图片解析规则一致，如果选用pdf文档上传系统，需要运用兼容图片解析的大模型，否则会报错）
 - Word `.docx`
 - TXT
 - Markdown
 - 直接粘贴文本
 
 ### 独立简历档案
+<img width="1172" height="1064" alt="image" src="https://github.com/user-attachments/assets/44e9430b-c7b6-42f4-953f-f12c47d63a6e" />
 
 每次上传简历都会形成独立档案，不会默认归为同一个人。
 
@@ -343,6 +290,7 @@ npm run dev
 - 简历摘要
 
 ### 简历诊断
+<img width="2978" height="1302" alt="image" src="https://github.com/user-attachments/assets/16c23782-32fe-421d-add7-ff0b7fc88ba0" />
 
 系统会生成：
 
@@ -352,6 +300,7 @@ npm run dev
 - 改进建议
 
 ### 定向优化
+<img width="2978" height="1456" alt="image" src="https://github.com/user-attachments/assets/162481c5-837e-4f47-994c-01eff869ec7a" />
 
 用户可以选择：
 
@@ -361,6 +310,7 @@ npm run dev
 系统会结合岗位 JD、匹配报告和 Gap 数据生成优化建议。
 
 ### 原版 / 优化版对照
+<img width="2994" height="1488" alt="image" src="https://github.com/user-attachments/assets/ba8c932c-8d31-4e86-b18f-8a679072d894" />
 
 优化完成后会展示结构化对照：
 
@@ -375,11 +325,13 @@ npm run dev
 我的岗位模块以 Job Card 为核心。
 
 ### 岗位添加
+<img width="2978" height="818" alt="image" src="https://github.com/user-attachments/assets/2d814c15-b907-4d0e-839d-fe5cafe52bfd" />
 
 支持：
 
 - 粘贴 JD 文本
-- 上传 JD 文件
+- 上传 JD 文件（建议word文档，上传pdf文档需要选用兼容图片提取功能的大模型）
+- 从链接中提取岗位信息（慎用，很多网站有反爬虫机制，大多数链接提取会报错，建议使用前两种方式）
 
 ### JD 解析
 
@@ -397,6 +349,7 @@ npm run dev
 - 核心考察点
 
 ### 匹配分析
+<img width="2470" height="1446" alt="image" src="https://github.com/user-attachments/assets/404d60cb-5750-4976-a674-c2bf688ef847" />
 
 系统会结合用户画像和岗位画像生成匹配报告：
 
@@ -410,21 +363,8 @@ npm run dev
 - 优势项
 - 待补强项
 
-### Gap 数据
-
-Gap 数据用于说明用户与岗位之间的具体差距。
-
-例如：
-
-```text
-SQL 数据分析不足
-A/B 测试经验缺少具体案例
-财务报表经验不够直接
-```
-
-这些 Gap 会传递给简历优化模块，用于生成针对性修改建议。
-
 ### 求职决策
+<img width="1168" height="598" alt="image" src="https://github.com/user-attachments/assets/4cafe05c-6122-4530-b12b-f1a0ffd799ed" />
 
 岗位详情页支持：
 
@@ -438,6 +378,7 @@ A/B 测试经验缺少具体案例
 ## 4. 投递追踪
 
 投递追踪模块用于管理求职进度。
+<img width="3018" height="1244" alt="image" src="https://github.com/user-attachments/assets/abab98d3-8a65-4393-84ab-8a15dc5d7699" />
 
 投递记录不从投递追踪页手动创建，而是从我的岗位中发起：
 
@@ -462,6 +403,7 @@ A/B 测试经验缺少具体案例
 ### 投递详情页
 
 投递详情页展示：
+<img width="2390" height="1448" alt="image" src="https://github.com/user-attachments/assets/b1f6ce91-175d-4ff7-a56a-f35af38f53cd" />
 
 - 岗位名称
 - 公司
@@ -470,6 +412,10 @@ A/B 测试经验缺少具体案例
 - 当前状态
 - 使用简历版本
 - 投递渠道
+
+<img width="1430" height="1298" alt="image" src="https://github.com/user-attachments/assets/8df14ba6-cd58-471a-a66f-201271ca9d06" />
+<img width="930" height="1010" alt="image" src="https://github.com/user-attachments/assets/9eccb5ce-3fbe-46ec-9eea-2fa4d87c817d" />
+
 - 状态历史时间线
 - 关联 Job Card
 - 关联匹配报告
@@ -478,6 +424,7 @@ A/B 测试经验缺少具体案例
 - AI 复盘报告
 
 ### 状态更新抽屉
+<img width="1608" height="1100" alt="image" src="https://github.com/user-attachments/assets/a56d4ce9-590d-4a9c-8797-674cea6c13d6" />
 
 点击「更新进度」可以选择新状态：
 
@@ -499,6 +446,7 @@ status_history
 如果误选状态，可以回退。系统会清除错误状态之后的时间线。
 
 ### 面试微录入
+<img width="1622" height="1374" alt="image" src="https://github.com/user-attachments/assets/8888b110-5a8a-408a-9b8a-1dac953c9267" />
 
 面试记录表单包含：
 
@@ -525,6 +473,7 @@ interview_rounds
 这些数据会用于 AI 复盘。
 
 ### AI 单次复盘报告
+<img width="2054" height="1316" alt="image" src="https://github.com/user-attachments/assets/e0540cdd-e0ae-44e4-8990-717685539150" />
 
 点击「生成复盘」后，系统会分析：
 
@@ -547,6 +496,7 @@ interview_rounds
 ## 5. 成长分析
 
 当投递记录达到 3 条以上，会解锁成长分析。
+<img width="2990" height="1222" alt="image" src="https://github.com/user-attachments/assets/efcc147e-69c9-401b-b39e-29f914cdf92d" />
 
 成长分析包含：
 
@@ -567,6 +517,7 @@ interview_rounds
 ```
 
 ### AI 成长解读
+<img width="2990" height="1480" alt="image" src="https://github.com/user-attachments/assets/06c1b154-389f-40aa-8c55-13908138ade3" />
 
 成长分析页支持生成 AI 解读。
 
@@ -756,93 +707,7 @@ git rm --cached .env data/store.json
 
 这不会删除本地文件，只会停止 Git 跟踪。
 
-## GitHub 上传流程
 
-设置远程仓库：
-
-```bash
-git remote set-url origin git@github.com:l6701w6605/GenAI-Project-Private.git
-```
-
-检查状态：
-
-```bash
-git status
-```
-
-暂存文件：
-
-```bash
-git add README.md public/app.js public/styles.css server.js .gitignore
-```
-
-提交：
-
-```bash
-git commit -m "Complete AI job assistant MVP"
-```
-
-如果远程 `main` 已经有内容，可以推送到新分支：
-
-```bash
-git checkout -b codex/current-version
-git push -u origin codex/current-version
-```
-
-然后在 GitHub 上创建 Pull Request。
-
-## 从 GitHub 拉取项目
-
-```bash
-git clone git@github.com:l6701w6605/GenAI-Project-Private.git
-cd GenAI-Project-Private
-npm install
-```
-
-创建 `.env`：
-
-```env
-LLM_API_KEY=自己的_API_Key
-LLM_BASE_URL=https://wolfai.top/v1
-LLM_MODEL=gpt-4.1-mini
-PORT=3000
-HOST=127.0.0.1
-```
-
-启动：
-
-```bash
-npm run dev
-```
-
-浏览器访问：
-
-```text
-http://127.0.0.1:3000
-```
-
-## 常见问题
-
-### 端口被占用
-
-报错：
-
-```text
-EADDRINUSE: address already in use 127.0.0.1:3000
-```
-
-解决：
-
-```bash
-lsof -i :3000
-kill <PID>
-```
-
-或者修改 `.env`：
-
-```env
-PORT=3001
-```
 
 ### 大模型 429 报错
 
@@ -909,14 +774,3 @@ npm run dev
 - 环形加载动画
 - 本地 JSON 数据持久化
 
-## 后续可扩展方向
-
-- 用户登录系统
-- SQLite / PostgreSQL 数据库
-- 简历导出为 Word / PDF
-- JD 链接抓取
-- OCR 截图识别
-- 邮件 / 日历提醒
-- 每周求职周报
-- 多用户权限隔离
-- 云端部署

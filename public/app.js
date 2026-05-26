@@ -16,6 +16,7 @@ let selectedApplicationId = null;
 let draftResumeText = "";
 let draftResumeFile = "";
 let draftJdText = "";
+let draftJdUrl = "";
 let jdInputMode = "text";
 let loadingStepTimer = null;
 
@@ -752,12 +753,11 @@ function renderJobCard(job) {
 
 function renderJobInput() {
   root().innerHTML = `
-    ${renderShell("添加岗位", "MVP 已完整支持文本 JD；链接抓取和截图 OCR 作为产品入口先保留降级提示。", `<button class="ghost-button" id="backJobs">返回</button>`)}
+    ${renderShell("添加岗位", "支持粘贴 JD、上传 JD 文件，或从岗位链接中提取正文后再解析。", `<button class="ghost-button" id="backJobs">返回</button>`)}
     <section class="panel">
       <div class="segmented">
         <button class="${jdInputMode === "text" ? "active" : ""}" data-mode="text">粘贴文本</button>
         <button class="${jdInputMode === "url" ? "active" : ""}" data-mode="url">岗位链接</button>
-        <button class="${jdInputMode === "screenshot" ? "active" : ""}" data-mode="screenshot">上传截图</button>
       </div>
       <div id="jdInputArea"></div>
     </section>
@@ -774,13 +774,22 @@ function renderJobInput() {
 
 function renderJobInputArea() {
   const area = $("#jdInputArea");
-  if (jdInputMode !== "text") {
+  if (jdInputMode === "url") {
     area.innerHTML = `
-      <div class="empty-state">
-        ${jdInputMode === "url" ? "链接抓取容易受招聘网站反爬影响，MVP 先降级为文本粘贴。" : "截图 OCR 入口已预留，MVP 先使用文本粘贴保证准确度。"}
-        <div class="button-row"><button id="switchTextMode">改用文本粘贴</button></div>
+      <div class="upload-zone">
+        <label for="jdUrl">岗位链接</label>
+        <input id="jdUrl" type="url" placeholder="粘贴招聘页面链接，例如 LinkedIn、公司官网、招聘平台岗位页" value="${escapeHtml(draftJdUrl)}" />
+        <span id="jdUrlStatus" class="meta">系统会尝试提取网页正文。若招聘平台反爬，请改用文本粘贴。</span>
+      </div>
+      <div class="button-row">
+        <button id="extractJdUrl">提取 JD 文本</button>
+        <button class="ghost-button" id="switchTextMode">改用文本粘贴</button>
       </div>
     `;
+    $("#jdUrl").addEventListener("input", event => {
+      draftJdUrl = event.target.value;
+    });
+    $("#extractJdUrl").addEventListener("click", extractJdFromUrl);
     $("#switchTextMode").addEventListener("click", () => {
       jdInputMode = "text";
       renderJobInput();
@@ -1360,8 +1369,8 @@ function renderApplicationDetail() {
         </div>
         <div class="report-block">
           <h3>复盘报告</h3>
-          ${retrospective ? renderRetrospectiveBlock(retrospective) : `<p class="meta">尚未生成复盘。数据不足时也可以生成基础复盘，系统会明确标注推断范围。</p>`}
-          <button id="generateRetrospective" type="button">生成复盘</button>
+          <p class="meta">${retrospective ? "复盘报告已生成，点击下方按钮查看完整报告。" : "尚未生成复盘。点击下方按钮后，系统会调用大模型生成并以弹窗展示。"}</p>
+          <button id="openRetrospectiveModal" type="button">复盘报告</button>
         </div>
       </section>
     </div>
@@ -1371,7 +1380,7 @@ function renderApplicationDetail() {
   $("#openApplicationJob").addEventListener("click", () => setView("jobDetail", { jobId: job?.job_card_id }));
   $("#openApplicationReport")?.addEventListener("click", () => setView("jobReport", { jobId: job?.job_card_id }));
   $("#recordInterview").addEventListener("click", () => showInterviewDrawer(app));
-  $("#generateRetrospective").addEventListener("click", event => generateRetrospective(app.application_id, event.currentTarget));
+  $("#openRetrospectiveModal").addEventListener("click", event => openRetrospectiveReport(app.application_id, event.currentTarget));
 }
 
 function renderRetrospectiveBlock(retrospective) {
@@ -1432,6 +1441,46 @@ function renderRetrospectiveBlock(retrospective) {
       ${retrospective.data_improvement_tip ? `<p class="meta">下次建议补充：${escapeHtml(retrospective.data_improvement_tip)}</p>` : ""}
     </div>
   `;
+}
+
+async function openRetrospectiveReport(applicationId, button) {
+  const app = state.applications.find(item => item.application_id === applicationId);
+  if (app?.retrospective) {
+    showRetrospectiveModal(app);
+    return;
+  }
+  await generateRetrospective(applicationId, button, { openModal: true });
+}
+
+function showRetrospectiveModal(app) {
+  $("#retrospectiveModal")?.remove();
+  const job = state.jobCards.find(item => item.job_card_id === app.job_card_id);
+  const report = app.retrospective;
+  if (!report) return toast("尚未生成复盘报告");
+  document.body.insertAdjacentHTML("beforeend", `
+    <div class="modal-backdrop" id="retrospectiveModal" role="dialog" aria-modal="true" aria-labelledby="retrospectiveModalTitle">
+      <section class="retrospective-modal">
+        <header class="retrospective-modal-header">
+          <div>
+            <h2 id="retrospectiveModalTitle">复盘报告</h2>
+            <p>${escapeHtml(jobTitle(job))} · ${escapeHtml(company(job))}</p>
+          </div>
+          <button class="ghost-button" id="closeRetrospectiveModal" type="button">关闭</button>
+        </header>
+        <div class="retrospective-modal-body">
+          ${renderRetrospectiveBlock(report)}
+        </div>
+      </section>
+    </div>
+  `);
+  $("#closeRetrospectiveModal").addEventListener("click", hideRetrospectiveModal);
+  $("#retrospectiveModal").addEventListener("click", event => {
+    if (event.target.id === "retrospectiveModal") hideRetrospectiveModal();
+  });
+}
+
+function hideRetrospectiveModal() {
+  $("#retrospectiveModal")?.remove();
 }
 
 function showStatusDrawer(app) {
@@ -1664,6 +1713,26 @@ async function uploadJdFile() {
   }
 }
 
+async function extractJdFromUrl() {
+  const button = $("#extractJdUrl");
+  const url = $("#jdUrl")?.value?.trim();
+  if (!url) return toast("请先输入岗位链接");
+  await withBusy(button, "提取中", async () => {
+    $("#jdUrlStatus").textContent = "正在获取网页内容并提取 JD 文本...";
+    const data = await api("/api/extract-jd-url", {
+      method: "POST",
+      body: JSON.stringify({ url })
+    });
+    draftJdUrl = url;
+    draftJdText = data.text;
+    jdInputMode = "text";
+    renderJobInput();
+    $("#jdText").value = draftJdText;
+    $("#jdCount").textContent = `${data.characters} 字，已从链接提取，请检查后解析`;
+    toast("JD 文本已从链接提取");
+  });
+}
+
 async function analyzeResume() {
   const button = $("#parseResume");
   await withBusy(button, "解析中", async () => {
@@ -1808,7 +1877,7 @@ async function saveInterviewRecord(applicationId, button) {
   });
 }
 
-async function generateRetrospective(applicationId, button) {
+async function generateRetrospective(applicationId, button, options = {}) {
   await withBusy(button, "生成中", async () => {
     await withLoadingOverlay({
       title: "正在生成复盘报告",
@@ -1818,6 +1887,10 @@ async function generateRetrospective(applicationId, button) {
       await api(`/api/applications/${applicationId}/retrospective`, { method: "POST" });
       await refresh();
       setView("applicationDetail", { applicationId });
+      if (options.openModal) {
+        const updated = state.applications.find(item => item.application_id === applicationId);
+        if (updated?.retrospective) showRetrospectiveModal(updated);
+      }
       toast("复盘报告已生成");
     });
   });
